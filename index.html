@@ -418,15 +418,37 @@ async function initEmailJS(){
   try { emailjs.init({ publicKey: EMAILJS.PUBLIC_KEY }); emailjsReady = true; return true; }
   catch(e){ return false; }
 }
-
 async function getLokasi(){
+  const kosong = { kota:'-', negara:'-', ip:'-', isp:'-' };
+
+  // 1️⃣ Coba ip-api.com (gratis, tanpa key, 45/menit)
+  try {
+    const r = await fetch('http://ip-api.com/json/?fields=status,city,country,query,isp');
+    const j = await r.json();
+    if (j && j.status === 'success') {
+      return { kota: j.city || '-', negara: j.country || '-', ip: j.query || '-', isp: j.isp || '-' };
+    }
+  } catch(e){ console.warn('[LOKASI] ip-api gagal:', e); }
+
+  // 2️⃣ Cadangan: ipapi.co
   try {
     const r = await fetch('https://ipapi.co/json/');
     const j = await r.json();
-    return { kota: j.city || '-', negara: j.country_name || '-', ip: j.ip || '-', isp: j.org || '-' };
-  } catch(e){
-    return { kota: '-', negara: '-', ip: '-', isp: '-' };
-  }
+    if (j && j.city) {
+      return { kota: j.city, negara: j.country_name || '-', ip: j.ip || '-', isp: j.org || '-' };
+    }
+  } catch(e){ console.warn('[LOKASI] ipapi.co gagal:', e); }
+
+  // 3️⃣ Cadangan terakhir: ipwho.is (tanpa key, tanpa batas ketat)
+  try {
+    const r = await fetch('https://ipwho.is/');
+    const j = await r.json();
+    if (j && j.city) {
+      return { kota: j.city, negara: j.country || '-', ip: j.ip || '-', isp: (j.connection && j.connection.isp) || '-' };
+    }
+  } catch(e){ console.warn('[LOKASI] ipwho.is gagal:', e); }
+
+  return kosong;
 }
 
 async function uploadToCloudinary(dataUrl, idx){
